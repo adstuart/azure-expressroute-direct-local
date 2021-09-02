@@ -4,13 +4,23 @@
 
 # 1. Introduction
 
+## Good pre-reading/watching
+
+It is assumed the reader is familiar with Azure networking constructs such as Regions, Peering Locations and ExpressRoute components. If not:
+
+- Overview video by John Savill [here](https://www.youtube.com/watch?v=oevwZZ1YFS0)
+- Overview article by Aidan Finn [here](https://aidanfinn.com/?p=22267)
+- What is ER Direct by Charley Wen [here](https://youtu.be/0wsQrP6cAB8?t=387)
+- Introduction of ExpressRoute Local by Yousef Khalidi [here](https://youtu.be/G9OrulBJTcE?t=960)
+
+<PG video>
+
 ## ExpressRoute Direct 
 
 Many customers on Azure leverage ExpressRoute for reliable hybrid connectivity. Sometimes these same customers have requirements that make  the [ExpressRoute Direct](https://docs.microsoft.com/en-us/azure/expressroute/expressroute-erdirect-about) [connectivity model](https://docs.microsoft.com/en-us/azure/expressroute/expressroute-connectivity-models) the correct design choice. Typical drivers for ExpressRoute Direct include:
 
-- Lowest possible latency
-- Regulation or security requirements
-- Hybrid connectivity bandwidth in excess of 10Gbps (Up to 100Gbps)
+- Regulation or security requirements (MacSec)
+- Big Data Hybrid connectivity bandwidth in excess of 10Gbps (Up to 100Gbps)
 - Attachment of complicated multi-VRF MPLS IPVPN/WAN
 - Simplification of connectivity design, logistics and commercial agreements
 
@@ -18,7 +28,7 @@ Many customers on Azure leverage ExpressRoute for reliable hybrid connectivity. 
 
 As per [here](https://docs.microsoft.com/en-us/azure/expressroute/expressroute-faqs#what-is-expressroute-local)
 
-> ExpressRoute Local is a SKU of ExpressRoute circuit, in addition to the Standard SKU and the Premium SKU. A key feature of Local is that a Local circuit at an ExpressRoute peering location gives you access only to one or two Azure regions in or near the same metro.... 
+> ExpressRoute Local is a SKU of ExpressRoute circuit, in addition to the Standard SKU and the Premium SKU. A key feature of Local is that a Local circuit at an ExpressRoute peering location gives you access only to one or two Azure regions in or near the same metro...
 
 > ...While you need to pay egress data transfer for your Standard or Premium ExpressRoute circuit, you don't pay egress data transfer separately for your ExpressRoute Local circuit. In other words, the price of ExpressRoute Local includes data transfer fees.
 
@@ -48,37 +58,52 @@ Leveraging the logical, circuit, to physical, port, framework of ExpressRoute Di
 
 This delivers upon the same expected uptime of the traditional bowtie design, with the added benefit of free data egress when leaving Azure towards On-Premises via a green ExpressRoute Local circuit.
 
-The important call-out here (outside of the technical considerations laid out later), is that **standard SKU ExpressRoute circuits as still used for connectivity to remote regions**. (Remember that Local SKU circuits can [only be used to reach the Local Azure region](https://docs.microsoft.com/en-us/azure/expressroute/expressroute-faqs#what-features-are-available-and-what-are-not-on-expressroute-local)). However, with specific traffic engineering, these circuits are configured to be only used during a failure scenario.
+The important call-out here (outside of the technical considerations laid out later), is that **standard SKU ExpressRoute circuits as still needed for DR connectivity to remote regions**. (Remember that Local SKU circuits can [only be used to reach the Local Azure region](https://docs.microsoft.com/en-us/azure/expressroute/expressroute-faqs#what-features-are-available-and-what-are-not-on-expressroute-local)). However, with specific traffic engineering, these circuits are configured to be only used during a failure scenario.
 
 > Good to know. Do you need to know which Azure region is classified as the "local" region for a specific peering location? Checkout the [ExpressRoute partners and peering locations documentation page](https://docs.microsoft.com/en-us/azure/expressroute/expressroute-locations-providers).  Notice the _Local Azure regions_ column [here](https://docs.microsoft.com/en-us/azure/expressroute/expressroute-locations-providers#global-commercial-azure).
 
--
-
 ## Traffic Engineering
 
->> jeremies article
+:bulb: Good to know. We cover thiss in more detail in the following places:
 
-Automatic failover
-
-## Net result
-
-Resilient design, bau no egress cost, failover automatic and costs
-
-## Cosiderations
-
-GlobalReach
-ER Hairpin
-Microsoft Peering
-Gateway limits
-Circuit limits
-Not premium for simplicity
-peering location as to be local, metro design would not work
-does not have to be all or nothing, logical circuits an mean differnet approach, er local for specific workload
+- [Designing for disaster recovery with ExpressRoute private peering](https://docs.microsoft.com/en-us/azure/expressroute/designing-for-disaster-recovery-with-expressroute-privatepeering)
+- [Multi-Circuit Expressroute Private Peering Configurations- BGP AS PAth Prepending/Local Preference](https://github.com/jwrightazure/lab/tree/master/Expressroute-Multicircuit-ASprepend-Localpref) by @jwrightazure
+- [ER Circuit migration](https://github.com/adstuart/azure-expressroute-migration)
 
 
-# worked example
+### Normal Condition / BAU
 
-This guides suggest an approach to this migration process that focuses on seamless failover, de-risking rollback, and understanding the correct ordering of steps. Each step will require you to leverage your existing knowledge of ExpressRoute, links will be provided to Azure documentation as required for further technical depth. 
+As stated above, we want to utilise the green ER Local circuits under normal conditions to benefit from their free egress costs. We will keep the ingress/egress symmetrical to reduce and further compleixties (stateful firewalls etc). To do this we utilise normal ExpressRoute BGP traffic controls to preference the local circuit, and local peering location, for ingress/egress to the local region.
 
-> :warning: This document assumes pre-existing knowledge of Azure, ExpressRoute and BGP. It is not designed to be read in isolation, but rather act as a high level guide, pointing you in the right direction, at the right places and get the project team asking the right questions to plan for success.
+E.g. In the diagram below, the customers WAN directs traffic to the Amsterdam Peering location for traffic destined to Azure West Europe. The Gateway in Azure West Europe then instructs the components within the Azure West Europe Virtual Networks to utilise the Amsterdam ER Local circuit when sending traffic in the opposite direction.
 
+![](images/2021-09-02-15-54-56.png)
+
+This is typically achieve with a combination of BGP metrics including Weight, As-path-prepend and Local Preference, see links above for a deep dive on these subjects.
+
+### Example Failure Scenario
+
+To highlight why the ExpressRoute standard circuits are needed, and when they will be used, lets take an example failure scenario. If the Amsterdam peering exchange has a complete failure (both customer or Microsoft Edge routers go offline), this effectively becomes unuseable as a connectivity path to West Europe.
+
+![](images/2021-09-02-16-05-28.png)
+
+Under these conditions, the backup peering location in Dublin can be used for connectivity to the West Europe region. This happens automatically if circuits and gateways are connected as per this design, and within the timescales of typical BGP failover (hold timers, BFD, etc). 
+
+In this scenario, the ExpressRoute standard circuit is used, as this is connectivity from a peering location to a remote region. During the time period when this connectivity pattern is used (until the Amsterdam PoP is restored) any data that leaves Azure West Europe, via the Dublin PoP, will incur egress costs due to use of the standard SKU circuit.
+
+## Considerations
+
+- ExpressRoute GlobalReach is [not available](https://docs.microsoft.com/en-us/azure/expressroute/expressroute-faqs#what-features-are-available-and-what-are-not-on-expressroute-local) on Local SKU circuits. If you plan to make use of GlobalReach for global connectivity scenarios, and/or, connectivity to workloads such as [Azure VMware Solution](https://docs.microsoft.com/en-us/azure/azure-vmware/tutorial-expressroute-global-reach-private-cloud) and [Skytap](https://help.skytap.com/wan-expressroute-overview.html), this should be considered before using this pattern
+- ExpressRoute hairpin. Some customers may utilise the routing properties of an ER circuit to route traffic between Azure Regions. I.e. if you connect two ExpressRoute Gateways to the same ExpressRoute circuit, [traffic will flow between them](https://cloudnetsec.blogspot.com/2019/02/azure-intra-region-and-inter-region.html). If you follow the pattern described in this guide, you utilise separate circuits and therefore remove this behaviour. **Please note, if you have requirements to route traffic between Azure Regions, it is always recommended to utilise Global VNet peering (or Azure Virtual WAN), and not ER Hairpin, for this traffic when possible**
+- Microsoft Peering
+- Gateway Limits. This design inherently increases the number of logical circuits used, ensure you are within ExpressRoute Gateway [limits](https://docs.microsoft.com/en-us/azure/expressroute/expressroute-about-virtual-network-gateways#gatewayfeaturesupport).
+- Circuit limits. By default, you can [create 10 circuits](https://docs.microsoft.com/en-us/azure/expressroute/how-to-expressroute-direct-portal#circuit) in the subscription where the ExpressRoute Direct resource is. This number can be increased by support.
+- Review [ExpressRoute Premium](https://docs.microsoft.com/en-us/azure/expressroute/expressroute-faqs#what-is-expressroute-premium) features, if you are making use of these features today, Local may not work for you
+
+Finally, if these technical constraints prevent you from benefiting from ExpressRoute Local egress pricing for you entire Azure design, it should not stop you considering it for future requirements. For example, if you have a future requirement for a BigData workload that is able to reside within a single region, there is nothing stopping you complimenting your existing design with a "sidecar" use of ExpressRoute Local. E.g.
+
+![](images/2021-09-02-16-28-17.png)
+
+# Conclusion
+
+We learnt that ExpressRoute Direct customers are able to leverage the pricing attributes of ExpressRoute Local SKU circuits whilst at the same time maintaining an Enterprise grade resilient hybrid connectivity pattern.
