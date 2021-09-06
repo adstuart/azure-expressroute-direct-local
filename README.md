@@ -14,7 +14,10 @@
     - [3.3. Traffic Engineering](#33-traffic-engineering)
         - [3.3.1. Normal Condition / BAU](#331-normal-condition--bau)
         - [3.3.2. Example Failure Scenario](#332-example-failure-scenario)
-    - [3.4. Considerations](#34-considerations)
+    - [3.4. Virtual WAN based topology options](#34-virtual-wan-based-topology-options)
+        - [3.4.1. Virtual WAN modified Bowtie](#341-virtual-wan-modified-bowtie)
+        - [3.4.2. Virtual WAN Local only](#342-virtual-wan-local-only)
+    - [3.5. Considerations](#35-considerations)
 - [4. Conclusion](#4-conclusion)
 
 <!-- /TOC -->
@@ -108,7 +111,31 @@ Under these conditions, the backup peering location in Dublin can be used for co
 
 In this scenario, the ExpressRoute standard circuit is used, as this is connectivity from a peering location to a remote region. During the time period when this connectivity pattern is used (until the Amsterdam PoP is restored) any data that leaves Azure West Europe, via the Dublin PoP, will incur egress costs due to use of the standard SKU circuit.
 
-## 3.4. Considerations
+## 3.4. Virtual WAN based topology options
+
+The combination of ExpressRoute Direct and ExpressRoute Local [can also](https://docs.microsoft.com/en-us/azure/virtual-wan/virtual-wan-expressroute-portal#:~:text=transit%20capabilities.%20ExpressRoute-,Local,-is%20also%20supported) be applied to scenarios utilising Azure Virtual WAN as [opposed](https://docs.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/define-an-azure-network-topology) to a traditional customer-managed hub/spoke network. 
+
+Due to Virtual WAN's [transitive](https://docs.microsoft.com/en-us/azure/virtual-wan/virtual-wan-global-transit-network-architecture) hub-to-hub routing properties, we have two posable topologies, each with slightly different routing behaviour during failure scenarios.
+
+### 3.4.1. Virtual WAN modified Bowtie
+
+![](images/2021-09-06-10-22-49.png)
+
+- Same connectivity pattern with combination of ExpressRoute Local and ExpressRoute Standard SKU circuits
+- Same routing / cost logic applies as per section 3.1-3.3
+- No dependency on VWAN hub-to-hub routing for peering location to remote region routing. E.g. If Azure North Europe Virtual WAN Hub has loss of service, assuming the Dublin Peering location is still online, traffic could still enter Microsoft Network in Dublin and traverse backbone to Azure West Europe
+- :warning: Be aware of considerations for "Azure to Azure inter-region traffic" in respect to this pattern. Click [here](https://docs.microsoft.com/en-us/azure/virtual-wan/virtual-wan-faq#when-two-hubs-hub-1-and-2-are-connected-and-there-is-an-expressroute-circuit-connected-as-a-bow-tie-to-both-the-hubs-what-is-the-path-for-a-vnet-connected-to-hub-1-to-reach-a-vnet-connected-in-hub-2) to learn more
+
+### 3.4.2. Virtual WAN Local only
+
+![](images/2021-09-06-10-26-35.png)
+
+- **This "non Bowtie" Local-only pattern is unique to Virtual WAN**
+- Azure Virtual WAN differs from customer-managed hub/spoke networking in Azure, in respect to this connectivity pattern. I.e. in the diagram above, the customer edge routers in **both** Dublin _and_ Amsterdam recieve prefixes for all VNets connected to the Global Virtual WAN -- _either peering location can still be used for connectivity to both regions, even though the ExpressRoute circuits are **not** meshed/bowtied._
+- Same routing logic applies as per section 3.1-3.3 (BGP control)
+- ExpressRoute egress bandwidth is never charged, however, in a failure scenario, if the Virtual WAN Hub-to-hub routing feature is used (E.g. Customer WAN > Dublin PoP > North Europe Hub > West Europe Hub) then inter-region bandwidth [charges](https://azure.microsoft.com/en-gb/pricing/details/bandwidth/) apply.
+
+## 3.5. Considerations
 
 - ExpressRoute GlobalReach is [not available](https://docs.microsoft.com/en-us/azure/expressroute/expressroute-faqs#what-features-are-available-and-what-are-not-on-expressroute-local) on Local SKU circuits. If you plan to make use of GlobalReach for global connectivity scenarios, and/or, connectivity to workloads such as [Azure VMware Solution](https://docs.microsoft.com/en-us/azure/azure-vmware/tutorial-expressroute-global-reach-private-cloud) and [Skytap](https://help.skytap.com/wan-expressroute-overview.html), this pattern should be avoided.
 - ExpressRoute hairpin. Some customers may utilise the routing properties of an ER circuit to route traffic between Azure Regions. I.e. if you connect two ExpressRoute Gateways to the same ExpressRoute circuit, [traffic will flow between them](https://cloudnetsec.blogspot.com/2019/02/azure-intra-region-and-inter-region.html). If you follow the pattern described in this guide, you utilise separate circuits and therefore remove this behaviour. **Please note, if you have requirements to route traffic between Azure Regions, it is always recommended to utilise Global VNet peering (or Azure Virtual WAN), and not ER Hairpin, for this traffic**.
@@ -121,7 +148,7 @@ expressroute-about-virtual-network-gateways#gatewayfeaturesupport).
 - Review [ExpressRoute Premium](https://docs.microsoft.com/en-us/azure/expressroute/expressroute-faqs#what-is-expressroute-premium) features, if you are making use of these features today, Local may not work for you. Please note, ExpressRoute Premium SKU circuits incur additional cost beyond the base ExpressRoute Direct port charges.
 - This design is predicated on the idea that data flows ingress/egress at the peering location closest to the Azure region, I.e. you utilise your own MPLS WAN to get traffic to the closest Microsoft Edge ([cold potato](https://en.wikipedia.org/wiki/Hot-potato_and_cold-potato_routing#:~:text=to%20the%20telco.-,Cold-potato%20routing,-%5Bedit%5D) from the perspective of your network). If you wish to follow a [hot potato](https://en.wikipedia.org/wiki/Hot-potato_and_cold-potato_routing#:~:text=References-,Hot-potato%20routing,-%5Bedit%5D) pattern, and maximise use of the Microsoft global network then this pattern is best avoided. 
 
-Finally, if these technical constraints prevent you from benefiting from ExpressRoute Local egress pricing for you entire Azure design, it should not stop you considering it for future requirements. For example, if you have a future requirement for a high-bandwidth workload (E.g. SAP, BigData, VDI) that is able to reside within a single region, there is nothing stopping you complimenting your existing design with a "sidecar" use of ExpressRoute Local. E.g.
+Finally, if these technical constraints prevent you from benefiting from ExpressRoute Local egress pricing for you entire Azure design, it should not stop you considering it for specific workloads. For example, if you have a future requirement for a high-bandwidth workload (E.g. SAP, BigData, VDI) that is able to reside within a single region, there is nothing stopping you complimenting your existing design with a "sidecar" use of ExpressRoute Local. E.g.
 
 ![](images/2021-09-02-16-28-17.png)
 
