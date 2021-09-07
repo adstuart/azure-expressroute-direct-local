@@ -40,7 +40,11 @@ It is assumed the reader is familiar with Azure networking constructs such as Re
 Many customers on Azure leverage ExpressRoute for reliable hybrid connectivity. Sometimes these same customers have requirements that make  the [ExpressRoute Direct](https://docs.microsoft.com/en-us/azure/expressroute/expressroute-erdirect-about) [connectivity model](https://docs.microsoft.com/en-us/azure/expressroute/expressroute-connectivity-models) the correct design choice. Typical drivers for ExpressRoute Direct include:
 
 - Regulation or security requirements (MacSec)
-- Big Data Hybrid connectivity bandwidth in excess of 10Gbps (Up to 100Gbps)
+- Big Data Hybrid connectivity bandwidth in excess of 10Gbps (Up to 100Gbps). Examples include:
+  - Large data egress to On-Premises (E.g. Self-driving cars)
+  - Large data egress to another cloud provider, E.g. [direct interconnection between Azure and Oracle Cloud Infrastructure](https://docs.microsoft.com/en-us/azure/virtual-machines/workloads/oracle/configure-azure-oci-networking)
+  - VDI solutions on Azure
+  - High bandwidth specialized workloads such as SAP on Azure
 - Attachment of complicated multi-VRF MPLS IPVPN/WAN
 - Simplification of connectivity design, logistics and commercial agreements
 
